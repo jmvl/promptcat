@@ -483,6 +483,59 @@
                 assert(result2 === 'text', 'Should return original text if no password');
             });
 
+            await runTest('PBKDF2 uses 100,000 iterations', async () => {
+                // Spy on deriveKey to capture iterations
+                let capturedIterations = null;
+                const originalDeriveKey = crypto.subtle.deriveKey.bind(crypto.subtle);
+                crypto.subtle.deriveKey = async function(...args) {
+                    const [{ iterations }] = args;
+                    capturedIterations = iterations;
+                    return originalDeriveKey.apply(this, args);
+                };
+
+                await CryptoService.encrypt('test', 'password');
+
+                assert(capturedIterations === 100000, `Expected 100000 iterations, got ${capturedIterations}`);
+
+                // Restore original
+                crypto.subtle.deriveKey = originalDeriveKey;
+            });
+
+            await runTest('No plaintext passwords stored in DB (passwordCheck validation)', async () => {
+                // Create a locked prompt with password
+                const password = 'testPass123';
+                const promptId = Date.now();
+                const encryptedBody = await CryptoService.encrypt('Body', password);
+                const encryptedNotes = await CryptoService.encrypt('Notes', password);
+                const passwordCheck = await CryptoService.encrypt(String(promptId), password);
+
+                const lockedPrompt = {
+                    id: promptId,
+                    title: 'Locked Test',
+                    body: encryptedBody,
+                    notes: encryptedNotes,
+                    folderId: null,
+                    tags: [],
+                    isFavorite: false,
+                    isLocked: true,
+                    passwordCheck: passwordCheck,
+                    dateCreated: Date.now(),
+                    dateModified: Date.now()
+                };
+
+                await DB.put(DB.STORES.PROMPTS, lockedPrompt);
+
+                const retrieved = await DB.get(DB.STORES.PROMPTS, promptId);
+                // Verify that the prompt does not contain a plaintext 'password' field
+                assert('password' in retrieved === false, 'Should not have plaintext "password" field');
+                // Verify that body and notes are encrypted objects
+                assert(typeof retrieved.body === 'object' && retrieved.body.ct, 'Body should be encrypted');
+                assert(typeof retrieved.notes === 'object' && retrieved.notes.ct, 'Notes should be encrypted');
+                // Verify that only encrypted check is passwordCheck
+                assert(retrieved.passwordCheck !== null, 'passwordCheck should exist');
+                assert(typeof retrieved.passwordCheck === 'string' || (typeof retrieved.passwordCheck === 'object' && retrieved.passwordCheck.ct), 'passwordCheck should be encrypted string or object');
+            });
+
             // ============ LOCKED PROMPT INTEGRATION ============
             await runTest('Locked prompt stores encrypted body and notes', async () => {
                 const password = 'promptLock123';

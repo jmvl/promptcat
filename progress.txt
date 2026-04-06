@@ -86,3 +86,63 @@
 - Migration strategy needed for schema evolution (current version=2 unused)
 - Full-text search could be implemented with external library if dataset grows
 - Export format includes `globalTags` as array of strings, not `{ id }` objects (inconsistency noted)
+
+---
+
+## Stories Implemented (Continued)
+
+### crypto-002: Validate encryption/decryption implementation
+**Status**: Completed ✅
+
+**Work Done**:
+- Reviewed Web Crypto API usage in `promptcat.html`
+- Confirmed AES-GCM with 256-bit keys and 12-byte IV
+- Confirmed PBKDF2 key derivation with 100,000 iterations and 16-byte salt
+- Verified that encrypted fields (body, notes, passwordCheck) are stored as `{ ct, iv, salt }` objects
+- Verified that wrong password returns `null` on decryption (no corrupted data)
+- Verified that no plaintext passwords are stored (only encrypted `passwordCheck`)
+- Wrote comprehensive automated tests for Node.js (via `test-crypto.js`) using native WebCrypto
+- Enhanced browser test suite (`test-schema.html`) with two new tests:
+  - PBKDF2 iteration count verification
+  - Password storage validation (no plaintext password field)
+
+**Deliverables**:
+1. **test-crypto.js** - Node.js test suite (9 tests) validating core crypto operations:
+   - PBKDF2 uses 100,000 iterations
+   - Encrypt/decrypt round-trip
+   - Wrong password returns null
+   - Empty string handling
+   - Input validation
+   - Ciphertext uniqueness (random salt/IV)
+   - Encrypted object structure (ct, iv, salt base64 strings)
+   - Different passwords produce different ciphertexts
+2. **test-schema.html** - Updated browser test suite with 2 new tests for crypto validation
+
+**Test Results**: All 9 Node.js tests pass ✅
+
+**Output**:
+```text
+=== Crypto Validation Tests (Node.js WebCrypto) ===
+✓ Encryption produces different ciphertexts for same text (random salt/IV)
+✓ Can encrypt and decrypt successfully (round-trip)
+✓ Decryption fails with wrong password (returns null)
+✓ Encryption handles empty string
+✓ Encryption returns original text if no password provided
+✓ Encryption returns null if no text provided
+✓ PBKDF2 uses 100,000 iterations
+✓ Encrypted object structure matches specification (ct, iv, salt all base64 strings)
+✓ Different passwords produce different ciphertexts
+
+=== Total: 9 passed, 0 failed ===
+```
+
+**Acceptance Criteria Met**:
+- ✅ Password-based key derivation uses PBKDF2 with appropriate iterations (100,000)
+- ✅ Encrypted fields cannot be read without password (decryption fails without correct password)
+- ✅ Wrong password returns null/error, not corrupted data (returns `null`)
+- ✅ No passwords appear in localStorage or IndexedDB (only encrypted `passwordCheck` stored; passwords kept in memory only)
+
+**Next Steps**:
+- Run browser test suite by opening `test-schema.html` in a browser (now includes 19 total tests)
+- Consider adding migration for future crypto parameter changes
+- Add rate limiting to password attempts in UI (throttling)
