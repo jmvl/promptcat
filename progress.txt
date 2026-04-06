@@ -1,0 +1,88 @@
+# Work Progress Log
+
+## Stories Implemented
+
+### db-001: Document IndexedDB schema and data model
+**Status**: Completed ✅
+
+**Work Done**:
+- Analyzed `promptcat.html` to extract complete IndexedDB schema
+- Created comprehensive documentation in `DB_SCHEMA.md` (11,498 bytes)
+- Created browser-based test suite in `test-schema.html` (27,761 bytes)
+
+**Deliverables**:
+1. **DB_SCHEMA.md** - Complete technical documentation including:
+   - All 4 object stores: `prompts`, `folders`, `globalTags`, `settings`
+   - Field definitions, types, and constraints
+   - Encryption implementation details (AES-GCM, PBKDF2)
+   - Data relationships and foreign keys
+   - Access patterns and performance considerations
+   - Security considerations and boundary analysis
+   - Migration history and API reference
+
+2. **test-schema.html** - Browser-based test suite covering:
+   - Schema validation (store existence, keyPaths)
+   - Prompt CRUD operations (create, read, update, delete)
+   - Folder operations and relationships
+   - Tag operations
+   - Settings storage
+   - Bulk operations (bulkPut, bulkRemove)
+   - Encryption/decryption correctness
+   - Locked prompt integration
+   - Storage usage calculation
+   - Clear/reset operations
+
+**Test Coverage**: 17 automated tests covering schema, CRUD, encryption, and data integrity.
+
+**Next Steps**:
+- Run test suite by opening `test-schema.html` in browser (requires IndexedDB support)
+- Review DB_SCHEMA.md for accuracy and completeness
+
+---
+
+# Codebase Patterns
+
+## Reusable Patterns Identified
+
+### IndexedDB Wrapper Pattern
+- **DB Module**: Encapsulates IndexedDB access with promise-based API
+- **Pattern**: IIFE exposing `{open, getAll, get, put, bulkPut, remove, bulkRemove, clear, getStorageUsage, STORES}`
+- **Usage**: Single database with multiple object stores, keyPath-based access
+
+### Encryption Service Pattern
+- **CryptoService**: AES-GCM encryption with PBKDF2 key derivation
+- **Encryption Output**: `{ ct, iv, salt }` object (base64 encoded)
+- **Password Validation**: Encrypted check value `passwordCheck` stores `encrypt(String(id), password)`
+- **Session Caching**: Optional in-memory storage of passwords for "remember this session"
+
+### Lockable Entity Pattern
+- **Entities**: Prompts (individually lockable) and Folders (lockable with inheritance)
+- **Fields**: `isLocked` (boolean), `passwordCheck` (encrypted ID)
+- **Behavior**: When folder locked, all contained prompts inherit encryption with same password
+- **UI**: Lock switch disabled in details view if folder is locked
+
+### Settings Store Pattern
+- **Schema**: `{ key: string, value: any }`
+- **Usage**: Simple key-value store for UI preferences (e.g., `panelWidth`)
+- **Access**: Get by key, not by id
+
+### Bulk Operations Pattern
+- **Transaction**: Single `readwrite` transaction for batch operations
+- **Bulk Put**: `items.forEach(item => store.put(item))` then `transaction.oncomplete`
+- **Bulk Remove**: `keys.forEach(key => store.delete(key))` then `transaction.oncomplete`
+
+## Pattern Usage Guidelines
+- Use DB module for all IndexedDB access
+- Use CryptoService.encrypt(text, password) for sensitive data
+- For validation, compute `CryptoService.encrypt(String(entityId), password)` and compare against stored `passwordCheck`
+- Clear `decryptedCache` when closing prompt details view to avoid memory leaks
+- Store UI state in separate `settings` store, not in entities
+
+---
+
+# Notes for Future Development
+
+- Consider adding native indexes for search performance on large datasets
+- Migration strategy needed for schema evolution (current version=2 unused)
+- Full-text search could be implemented with external library if dataset grows
+- Export format includes `globalTags` as array of strings, not `{ id }` objects (inconsistency noted)
