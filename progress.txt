@@ -71,6 +71,13 @@
 - **Bulk Put**: `items.forEach(item => store.put(item))` then `transaction.oncomplete`
 - **Bulk Remove**: `keys.forEach(key => store.delete(key))` then `transaction.oncomplete`
 
+### Pure Business Logic Module Pattern
+- **Module**: `PromptCatLogic` - Self-contained IIFE exposing pure functions
+- **Responsibilities**: Core business operations: CRUD, search, tag management, folder operations, import/export, stats
+- **Dependencies**: None (except internal crypto helpers using Web Crypto)
+- **Benefits**: Testable in isolation (Node.js), no DOM dependencies, reusable across environments
+- **Test Coverage**: Unit tests in `test-logic.js` (34 tests)
+
 ## Pattern Usage Guidelines
 - Use DB module for all IndexedDB access
 - Use CryptoService.encrypt(text, password) for sensitive data
@@ -146,3 +153,35 @@
 - Run browser test suite by opening `test-schema.html` in a browser (now includes 19 total tests)
 - Consider adding migration for future crypto parameter changes
 - Add rate limiting to password attempts in UI (throttling)
+
+### logic-003: Extract core business logic into pure functions
+**Status**: Completed ✅
+
+**Work Done**:
+- Analyzed `promptcat.html` to identify core business logic functions
+- Extracted all CRUD operations, search, tag management, folder operations, import/export, and stats into a separate module `logic.js`
+- Created comprehensive test suite `test-logic.js` with 34 unit tests covering all functions
+- All tests pass in Node.js environment using WebCrypto polyfill
+
+**Deliverables**:
+1. **logic.js** - Pure business logic module exposing `PromptCatLogic` with:
+   - CRUD: createPrompt, updatePrompt, deletePrompt, bulkDeletePrompts
+   - Search: searchPrompts, createMatchSnippet
+   - Tags: addGlobalTag, renameTag, deleteTag
+   - Folders: createFolder, renameFolder, deleteFolder, toggleFolderLock, movePromptToFolder, bulkMovePrompts
+   - Import/Export: serializeExport, importData
+   - Stats: countPromptsInFolder, countPromptsByTag, countLockedPrompts
+   - Utilities: filterPrompts, sortPrompts, validatePassword, encryptContent, decryptContent, createPasswordCheck
+2. **test-logic.js** - Node.js test suite (34 tests) validating all business logic functions
+
+**Test Results**: All 34 tests pass ✅
+
+**Acceptance Criteria Met**:
+- ✅ All CRUD operations have dedicated functions
+- ✅ Search function accepts query and returns matching prompts (with IDs)
+- ✅ Tag add/remove/rename functions exist and update all affected prompts
+- ✅ Drag-drop reordering logic (movePromptToFolder, bulkMovePrompts) is isolated and testable
+- ✅ Functions have clear parameter and return types documented (JSDoc)
+
+**Next Steps**:
+- Integrate `logic.js` into `promptcat.html` by replacing inline logic with module calls
