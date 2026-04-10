@@ -423,6 +423,173 @@ const PromptCatLogic = (() => {
         });
     }
 
+    // ==================== SCHEMA VALIDATION ====================
+
+    /**
+     * JSON Schema definitions for validation
+     */
+    const SCHEMA = {
+        prompts: {
+            type: 'array',
+            items: {
+                type: 'object',
+                required: ['id', 'title', 'body', 'folderId', 'tags', 'isFavorite', 'isLocked', 'dateCreated', 'dateModified'],
+                properties: {
+                    id: { type: 'number' },
+                    title: { type: 'string', maxLength: 500 },
+                    body: { oneOf: [{ type: 'string' }, { type: 'object', properties: { ct: { type: 'string' }, iv: { type: 'string' }, salt: { type: 'string' } } }] },
+                    notes: { oneOf: [{ type: 'string' }, { type: 'object', properties: { ct: { type: 'string' }, iv: { type: 'string' }, salt: { type: 'string' } } }] },
+                    folderId: { type: ['number', 'null'] },
+                    tags: { type: 'array', items: { type: 'string' } },
+                    isFavorite: { type: 'boolean' },
+                    isLocked: { type: 'boolean' },
+                    passwordCheck: { oneOf: [{ type: 'string' }, { type: 'null' }] },
+                    dateCreated: { type: 'number' },
+                    dateModified: { type: 'number' }
+                }
+            }
+        },
+        folders: {
+            type: 'array',
+            items: {
+                type: 'object',
+                required: ['id', 'name'],
+                properties: {
+                    id: { type: 'number' },
+                    name: { type: 'string', maxLength: 100 },
+                    isLocked: { type: 'boolean' },
+                    passwordCheck: { oneOf: [{ type: 'string' }, { type: 'null' }] }
+                }
+            }
+        },
+        globalTags: {
+            type: 'array',
+            items: {
+                type: 'object',
+                required: ['id'],
+                properties: {
+                    id: { type: 'string' }
+                }
+            }
+        },
+        settings: {
+            type: 'array',
+            items: {
+                type: 'object',
+                required: ['key', 'value'],
+                properties: {
+                    key: { type: 'string' },
+                    value: {}
+                }
+            }
+        },
+        export: {
+            type: 'object',
+            required: ['version', 'timestamp', 'data'],
+            properties: {
+                version: { type: 'string' },
+                timestamp: { type: 'number' },
+                appVersion: { type: 'string' },
+                data: {
+                    type: 'object',
+                    required: ['prompts', 'folders', 'globalTags', 'settings'],
+                    properties: {
+                        prompts: SCHEMA.prompts,
+                        folders: SCHEMA.folders,
+                        globalTags: SCHEMA.globalTags,
+                        settings: SCHEMA.settings
+                    }
+                }
+            }
+        }
+    };
+
+    /**
+     * Validate data against schema
+     * @param {Object} data - Data to validate
+     * @param {string} schemaName - Schema name to use ('prompts', 'folders', 'globalTags', 'settings', 'export')
+     * @returns {Object} { valid: boolean, errors: Array<string> }
+     */
+    function validateAgainstSchema(data, schemaName) {
+        const schema = SCHEMA[schemaName];
+        if (!schema) {
+            return {
+                valid: false,
+                errors: [`Unknown schema: ${schemaName}`]
+            };
+        }
+
+        const errors = [];
+
+        function validate(data, schema, path = '') {
+            // Type validation
+            if (schema.type) {
+                const actualType = Array.isArray(data) ? 'array' : typeof data;
+                if (actualType !== schema.type) {
+                    errors.push(`Type mismatch at ${path}: expected ${schema.type}, got ${actualType}`);
+                    return;
+                }
+            }
+
+            // Required fields
+            if (schema.required && typeof data === 'object' && data !== null && !Array.isArray(data)) {
+                for (const field of schema.required) {
+                    if (!(field in data)) {
+                        errors.push(`Missing required field at ${path}.${field}`);
+                    }
+                }
+            }
+
+            // Properties validation
+            if (schema.properties && typeof data === 'object' && data !== null) {
+                for (const [key, value] of Object.entries(data)) {
+                    const propertySchema = schema.properties[key];
+                    if (propertySchema) {
+                        validate(value, propertySchema, `${path}.${key}`);
+                    }
+                    // Allow extra fields (graceful handling)
+                }
+            }
+
+            // Array items validation
+            if (schema.items && Array.isArray(data)) {
+                data.forEach((item, index) => {
+                    validate(item, schema.items, `${path}[${index}]`);
+                });
+            }
+
+            // OneOf validation
+            if (schema.oneOf && typeof data === 'object' && data !== null) {
+                const validSchemas = schema.oneOf.filter(subSchema => {
+                    const tempErrors = [];
+                    validate(data, subSchema, path);
+                    return tempErrors.length === 0;
+                });
+                if (validSchemas.length === 0) {
+                    errors.push(`Value at ${path} doesn't match any of the allowed schemas`);
+                }
+            }
+        }
+
+        validate(data, schema, path);
+        return {
+            valid: errors.length === 0,
+            errors
+        };
+    }
+
+    /**
+     * Create export metadata
+     * @returns {Object} Export metadata
+     */
+    function createExportMetadata() {
+        return {
+            version: '1.0.0',
+            timestamp: Date.now(),
+            appVersion: 'promptcat-1.0.0'
+        };
+    }
+
     // ==================== EXPORT/IMPORT ====================
 
     /**
@@ -430,40 +597,178 @@ const PromptCatLogic = (() => {
      * @param {Array} prompts - Prompts to export
      * @param {Array} folders - Folders to export (full array or subset)
      * @param {Array} globalTags - Global tags to export
-     * @returns {Object} Export object
+     * @param {Array} settings - Settings to export
+     * @returns {Object} Enhanced export object with metadata
      */
-    function serializeExport(prompts, folders, globalTags) {
+    function serializeExport(prompts, folders, globalTags, settings) {
+        const metadata = createExportMetadata();
         return {
-            prompts: prompts.map(p => ({ ...p })), // Deep copy
-            folders: folders.map(f => ({ ...f })), // Deep copy
-            globalTags: [...globalTags]
+            version: metadata.version,
+            timestamp: metadata.timestamp,
+            appVersion: metadata.appVersion,
+            data: {
+                prompts: prompts.map(p => ({ ...p })), // Deep copy
+                folders: folders.map(f => ({ ...f })), // Deep copy
+                globalTags: globalTags.map(tag => ({ id: tag })), // Convert to object format
+                settings: settings.map(s => ({ ...s })) // Deep copy
+            }
         };
     }
 
     /**
-     * Import data with conflict resolution
-     * @param {Object} importData - Imported data { prompts, folders, globalTags }
+     * Import data with conflict resolution and validation
+     * @param {Object} importData - Imported data (enhanced format with metadata)
      * @param {Array} existingPrompts - Current prompts
      * @param {Array} existingFolders - Current folders
      * @param {Array} existingTags - Current tags
+     * @param {Array} existingSettings - Current settings
      * @param {boolean} isPartial - If true, append only; if false, overwrite all
-     * @returns {Object} { prompts: newArray, folders: newArray, globalTags: newArray }
+     * @returns {Object} { success: boolean, data: Object, errors: Array<string>, warnings: Array<string> }
      */
-    function importData(importData, existingPrompts, existingFolders, existingTags, isPartial = false) {
-        if (isPartial) {
-            return {
-                prompts: mergePrompts(existingPrompts, importData.prompts || []),
-                folders: mergeFolders(existingFolders, importData.folders || []),
-                globalTags: mergeGlobalTags(existingTags, importData.globalTags || [])
-            };
-        } else {
-            // Full overwrite: use imported data directly (filtering by ID conflicts is handled upstream)
-            return {
-                prompts: importData.prompts || [],
-                folders: importData.folders || [],
-                globalTags: importData.globalTags || []
-            };
+    function importData(importData, existingPrompts, existingFolders, existingTags, existingSettings, isPartial = false) {
+        const result = {
+            success: false,
+            data: null,
+            errors: [],
+            warnings: []
+        };
+
+        try {
+            // Validate JSON format
+            if (!importData || typeof importData !== 'object') {
+                throw new Error('Import data must be a valid object');
+            }
+
+            // Check if it's the new enhanced format with metadata
+            const isEnhancedFormat = importData.version && importData.timestamp && importData.data;
+            
+            let dataToImport;
+            
+            if (isEnhancedFormat) {
+                // New format: validate against export schema
+                const exportValidation = validateAgainstSchema(importData, 'export');
+                if (!exportValidation.valid) {
+                    throw new Error(`Export format validation failed: ${exportValidation.errors.join(', ')}`);
+                }
+                
+                dataToImport = importData.data;
+                
+                // Version compatibility check
+                const exportVersion = importData.version;
+                if (exportVersion !== '1.0.0') {
+                    result.warnings.push(`Export version ${exportVersion} may not be compatible with current version 1.0.0`);
+                }
+                
+                result.warnings.push(`Imported data from ${new Date(importData.timestamp).toISOString()}`);
+                
+            } else {
+                // Legacy format: wrap with data structure and validate
+                result.warnings.push('Using legacy import format - consider updating to enhanced format');
+                dataToImport = importData;
+            }
+
+            // Validate individual data sections
+            const validations = [
+                { name: 'prompts', data: dataToImport.prompts, schema: 'prompts' },
+                { name: 'folders', data: dataToImport.folders, schema: 'folders' },
+                { name: 'globalTags', data: dataToImport.globalTags, schema: 'globalTags' },
+                { name: 'settings', data: dataToImport.settings, schema: 'settings' }
+            ];
+
+            for (const { name, data, schema } of validations) {
+            if (!Array.isArray(data)) {
+                throw new Error(`${name} must be an array`);
+            }
+            
+            const validation = validateAgainstSchema({ [name]: data }, name);
+            if (!validation.valid) {
+                result.errors.push(`${name} validation failed: ${validation.errors.join(', ')}`);
+            }
+            
+            // Additional validation for specific data types
+            if (name === 'prompts') {
+                for (let i = 0; i < data.length; i++) {
+                    const prompt = data[i];
+                    if (prompt.dateCreated > Date.now()) {
+                        result.warnings.push(`Prompt ${prompt.id} has future dateCreated timestamp`);
+                    }
+                    if (prompt.dateModified > Date.now()) {
+                        result.warnings.push(`Prompt ${prompt.id} has future dateModified timestamp`);
+                    }
+                    if (prompt.title && prompt.title.length > 500) {
+                        result.warnings.push(`Prompt ${prompt.id} title exceeds 500 characters`);
+                    }
+                }
+            }
+            
+            if (name === 'folders') {
+                for (let i = 0; i < data.length; i++) {
+                    const folder = data[i];
+                    if (folder.name && folder.name.length > 100) {
+                        result.warnings.push(`Folder ${folder.id} name exceeds 100 characters`);
+                    }
+                }
+            }
         }
+
+            // If validation failed, return early
+            if (result.errors.length > 0) {
+                return result;
+            }
+
+            // Process import with conflict resolution
+            let processedData;
+            if (isPartial) {
+                processedData = {
+                    prompts: mergePrompts(existingPrompts, dataToImport.prompts || []),
+                    folders: mergeFolders(existingFolders, dataToImport.folders || []),
+                    globalTags: mergeGlobalTags(existingTags, extractGlobalTags(dataToImport.globalTags || [])),
+                    settings: mergeSettings(existingSettings, dataToImport.settings || [])
+                };
+            } else {
+                // Full overwrite: use imported data directly
+                processedData = {
+                    prompts: dataToImport.prompts || [],
+                    folders: dataToImport.folders || [],
+                    globalTags: extractGlobalTags(dataToImport.globalTags || []),
+                    settings: dataToImport.settings || []
+                };
+            }
+
+            result.success = true;
+            result.data = processedData;
+            
+        } catch (error) {
+            result.errors.push(`Import failed: ${error.message}`);
+        }
+
+        return result;
+    }
+
+    /**
+     * Extract global tags from objects (convert { id: 'tag' } to 'tag')
+     * @param {Array} globalTags - Global tags in object format
+     * @returns {Array} Global tags as strings
+     */
+    function extractGlobalTags(globalTags) {
+        return globalTags.map(tag => tag.id).filter(id => id && typeof id === 'string');
+    }
+
+    /**
+     * Merge settings with conflict resolution
+     * @param {Array} existingSettings - Existing settings
+     * @param {Array} incomingSettings - Incoming settings
+     * @returns {Array} Merged settings
+     */
+    function mergeSettings(existing, incoming) {
+        const existingMap = new Map(existing.map(s => [s.key, s]));
+        
+        // Add/update settings from incoming data
+        incoming.forEach(setting => {
+            existingMap.set(setting.key, setting);
+        });
+        
+        return Array.from(existingMap.values());
     }
 
     function mergePrompts(existing, incoming) {
@@ -691,6 +996,7 @@ const PromptCatLogic = (() => {
         // Import/Export
         serializeExport,
         importData,
+        validateAgainstSchema,
 
         // Stats
         countPromptsInFolder,
