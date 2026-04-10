@@ -1,0 +1,384 @@
+# Instincts generated from https://github.com/jmvl/promptcat
+# Generated: 2026-04-10T15:49:55.821Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: promptcat-commit-conventional
+trigger: "when writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: https://github.com/jmvl/promptcat
+---
+
+# Promptcat Commit Conventional
+
+## Action
+
+Use conventional commit format with prefixes: feat
+
+## Evidence
+
+- 4 commits analyzed
+- Detected conventional commit pattern
+- Examples: feat: db-001 - Document IndexedDB schema and data model, feat(crypto): validate encryption/decryption implementation (crypto-002)
+
+---
+id: promptcat-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/jmvl/promptcat
+---
+
+# Promptcat Commit Length
+
+## Action
+
+Write moderate-length commit messages (~65 characters)
+
+## Evidence
+
+- Average commit message length: 65 chars
+- Based on 4 commits
+
+---
+id: promptcat-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/jmvl/promptcat
+---
+
+# Promptcat Naming Files
+
+## Action
+
+Use camelCase naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: camelCase
+
+---
+id: promptcat-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/jmvl/promptcat
+---
+
+# Promptcat Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: promptcat-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/jmvl/promptcat
+---
+
+# Promptcat Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: promptcat-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/jmvl/promptcat
+---
+
+# Promptcat Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: promptcat-workflow-feature-development-with-tests-and-documentation
+trigger: "when doing feature development with tests and documentation"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/jmvl/promptcat
+---
+
+# Promptcat Workflow Feature Development With Tests And Documentation
+
+## Action
+
+Follow the feature-development-with-tests-and-documentation workflow:
+1. Implement or refactor core logic in a dedicated file (e.g., logic.js)
+2. Create or update an automated test suite for the new logic (e.g., test-logic.js, test-crypto.js, test-schema.html)
+3. Update progress tracking and documentation files (e.g., progress.txt, DB_SCHEMA.md)
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: logic.js, test-logic.js, test-crypto.js
+
+---
+id: promptcat-instinct-file-naming-camelCase
+trigger: "When creating or renaming a JavaScript source file"
+confidence: 0.85
+domain: code-style
+source: repo-analysis
+source_repo: jmvl/promptcat
+---
+
+# Promptcat Instinct File Naming CamelCase
+
+## Action
+
+Use camelCase for file names (e.g., logic.js, testLogic.js)
+
+## Evidence
+
+- Pattern in files: logic.js, test-logic.js
+
+---
+id: promptcat-instinct-function-naming-camelCase
+trigger: "When defining a function"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: jmvl/promptcat
+---
+
+# Promptcat Instinct Function Naming CamelCase
+
+## Action
+
+Name the function using camelCase
+
+## Evidence
+
+- Naming convention specified in analysis
+
+---
+id: promptcat-instinct-class-naming-pascalCase
+trigger: "When defining a class"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: jmvl/promptcat
+---
+
+# Promptcat Instinct Class Naming PascalCase
+
+## Action
+
+Name the class using PascalCase
+
+## Evidence
+
+- Naming convention specified in analysis
+
+---
+id: promptcat-instinct-constant-naming-screamingSnakeCase
+trigger: "When defining a constant"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: jmvl/promptcat
+---
+
+# Promptcat Instinct Constant Naming ScreamingSnakeCase
+
+## Action
+
+Name the constant using SCREAMING_SNAKE_CASE
+
+## Evidence
+
+- Naming convention specified in analysis
+
+---
+id: promptcat-instinct-import-style-relative
+trigger: "When importing modules in JavaScript files"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: jmvl/promptcat
+---
+
+# Promptcat Instinct Import Style Relative
+
+## Action
+
+Use relative import paths
+
+## Evidence
+
+- Import style specified in analysis
+
+---
+id: promptcat-instinct-export-style-named
+trigger: "When exporting functions or variables from a module"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: jmvl/promptcat
+---
+
+# Promptcat Instinct Export Style Named
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Export style specified in analysis
+
+---
+id: promptcat-instinct-testing-file-per-feature
+trigger: "When adding or updating a feature or logic module"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: jmvl/promptcat
+---
+
+# Promptcat Instinct Testing File Per Feature
+
+## Action
+
+Create or update a dedicated test file for that feature (e.g., test-logic.js, test-crypto.js)
+
+## Evidence
+
+- Pattern in files: test-logic.js, test-crypto.js
+- Workflow: feature-development-with-tests-and-documentation
+
+---
+id: promptcat-instinct-testing-html-for-schema
+trigger: "When validating schemas or browser-based logic"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: jmvl/promptcat
+---
+
+# Promptcat Instinct Testing Html For Schema
+
+## Action
+
+Create or update an HTML test file (e.g., test-schema.html)
+
+## Evidence
+
+- Pattern in files: test-schema.html
+- Workflow: feature-development-with-tests-and-documentation
+
+---
+id: promptcat-instinct-testing-after-logic-change
+trigger: "When implementing or refactoring core logic"
+confidence: 0.92
+domain: testing
+source: repo-analysis
+source_repo: jmvl/promptcat
+---
+
+# Promptcat Instinct Testing After Logic Change
+
+## Action
+
+Immediately create or update the corresponding test suite
+
+## Evidence
+
+- Workflow: feature-development-with-tests-and-documentation
+- Commit sequence pattern
+
+---
+id: promptcat-instinct-git-conventional-commits-feat
+trigger: "When committing a new feature or logic module"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: jmvl/promptcat
+---
+
+# Promptcat Instinct Git Conventional Commits Feat
+
+## Action
+
+Start the commit message with 'feat:' and include a ticket or module code (e.g., feat: logic-003 - ...)
+
+## Evidence
+
+- Seen in commit: feat: db-001 - Document IndexedDB schema and data model
+- Seen in commit: feat: logic-003 - Extract core business logic into pure functions
+
+---
+id: promptcat-instinct-git-commit-length
+trigger: "When writing a commit message"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: jmvl/promptcat
+---
+
+# Promptcat Instinct Git Commit Length
+
+## Action
+
+Keep the commit message concise (~65 characters on average)
+
+## Evidence
+
+- Average commit length: 65
+
+---
+id: promptcat-instinct-workflow-feature-dev-with-tests-docs
+trigger: "When adding a new feature or core logic to the codebase"
+confidence: 0.92
+domain: workflow
+source: repo-analysis
+source_repo: jmvl/promptcat
+---
+
+# Promptcat Instinct Workflow Feature Dev With Tests Docs
+
+## Action
+
+Implement or refactor the logic, create/update automated tests, and update progress tracking/documentation files
+
+## Evidence
+
+- Workflow: feature-development-with-tests-and-documentation
+- Commit sequence and files involved
+
