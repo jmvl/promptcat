@@ -1,0 +1,6 @@
+interface:
+  display_name: "Promptcat"
+  short_description: "Repo-specific patterns and workflows for promptcat"
+  default_prompt: "Use the promptcat repo skill to follow existing architecture, testing, and workflow conventions."
+policy:
+  allow_implicit_invocation: true
