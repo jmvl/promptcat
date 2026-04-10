@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PromptCat DB Schema Tests</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; background: #1e1e2e; color: #e0e0e0; }
+        h1 { color: #6c5ce7; }
+        .test-suite { margin: 20px 0; padding: 15px; background: #272535; border-radius: 8px; }
+        .test-suite h2 { margin-top: 0; color: #a0a0b5; font-size: 1.1em; }
+        .test { padding: 8px 12px; margin: 5px 0; border-radius: 4px; display: flex; justify-content: space-between; }
+        .test.pass { background: #1b4332; }
+        .test.fail { background: #3d1a1a; }
+        .test-name { font-weight: 500; }
+        .test-status { font-weight: bold; }
+        .test.pass .test-status { color: #2ecc71; }
+        .test.fail .test-status { color: #e74c3c; }
+        .summary { margin-top: 20px; padding: 15px; background: #272535; border-radius: 8px; font-size: 1.2em; }
+        .summary.all-pass { border-left: 4px solid #2ecc71; }
+        .summary.has-fail { border-left: 4px solid #e74c3c; }
+        .error-details { font-size: 0.9em; color: #e74c3c; margin-top: 5px; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h1>🧪 PromptCat DB Schema Tests</h1>
+    <div id="results"></div>
+    <div id="summary" class="summary"></div>
+
+    <script>
+        // Minimal DB and CryptoService extracted from promptcat.html for testing
+        const DB = (function() {
+            const DB_NAME = 'PromptCatDB_Test';
+            const DB_VERSION = 2;
+            let db;
+
+            const STORES = {
+                PROMPTS: 'prompts',
+                FOLDERS: 'folders',
+                TAGS: 'globalTags',
+                SETTINGS: 'settings',
+            };
+
+            function open() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(DB_NAME, DB_VERSION);
+                    request.onerror = event => reject('Error opening database');
+                    request.onsuccess = event => {
+                        db = event.target.result;
+                        resolve(db);
+                    };
+                    request.onupgradeneeded = event => {
+                        db = event.target.result;
+                        if (!db.objectStoreNames.contains(STORES.PROMPTS)) {
+                            db.createObjectStore(STORES.PROMPTS, { keyPath: 'id' });
+                        }
+                        if (!db.objectStoreNames.contains(STORES.FOLDERS)) {
+                            db.createObjectStore(STORES.FOLDERS, { keyPath: 'id' });
+                        }
+                        if (!db.objectStoreNames.contains(STORES.TAGS)) {
+                            db.createObjectStore(STORES.TAGS, { keyPath: 'id' });
+                        }
+                        if (!db.objectStoreNames.contains(STORES.SETTINGS)) {
+                            db.createObjectStore(STORES.SETTINGS, { keyPath: 'key' });
+                        }
+                    };
+                });
+            }
+
+            function get(storeName, key) {
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction(storeName, 'readonly');
+                    const store = transaction.objectStore(storeName);
+                    const request = store.get(key);
+                    request.onsuccess = event => resolve(event.target.result);
+                    request.onerror = event => reject(`Error getting item ${key} from ${storeName}`);
+                });
+            }
+
+            function getAll(storeName) {
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction(storeName, 'readonly');
+                    const store = transaction.objectStore(storeName);
+                    const request = store.getAll();
+                    request.onsuccess = event => resolve(event.target.result);
+                    request.onerror = event => reject(`Error getting all from ${storeName}`);
+                });
+            }
+
+            function put(storeName, item) {
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction(storeName, 'readwrite');
+                    const store = transaction.objectStore(storeName);
+                    const request = store.put(item);
+                    request.onsuccess = () => resolve();
+                    request.onerror = event => reject(`Error putting item in ${storeName}`);
+                });
+            }
+
+            function bulkPut(storeName, items) {
+                return new Promise((resolve, reject) => {
+                    if (items.length === 0) return resolve();
+                    const transaction = db.transaction(storeName, 'readwrite');
+                    const store = transaction.objectStore(storeName);
+                    items.forEach(item => store.put(item));
+                    transaction.oncomplete = () => resolve();
+                    transaction.onerror = event => reject(`Error bulk putting items in ${storeName}`);
+                });
+            }
+
+            function remove(storeName, key) {
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction(storeName, 'readwrite');
+                    const store = transaction.objectStore(storeName);
+                    const request = store.delete(key);
+                    request.onsuccess = () => resolve();
+                    request.onerror = event => reject(`Error deleting item ${key} from ${storeName}`);
+                });
+            }
+
+            function clear(storeName) {
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction(storeName, 'readwrite');
+                    const store = transaction.objectStore(storeName);
+                    const request = store.clear();
+                    request.onsuccess = () => resolve();
+                    request.onerror = event => reject(`Error clearing store ${storeName}`);
+                });
+            }
+
+            return { open, getAll, put, bulkPut, remove, clear, get, STORES };
+        })();
+
+        const CryptoService = {
+            encoder: new TextEncoder(),
+            decoder: new TextDecoder(),
+
+            _base64ToArrayBuffer(base64) {
+                const binary_string = window.atob(base64);
+                const len = binary_string.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binary_string.charCodeAt(i);
+                }
+                return bytes.buffer;
+            },
+
+            _arrayBufferToBase64(buffer) {
+                let binary = '';
+                const bytes = new Uint8Array(buffer);
+                const len = bytes.byteLength;
+                for (let i = 0; i < len; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                return window.btoa(binary);
+            },
+
+            async _deriveKey(password, salt) {
+                const keyMaterial = await window.crypto.subtle.importKey(
+                    "raw", this.encoder.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
+                );
+                return window.crypto.subtle.deriveKey(
+                    { "name": "PBKDF2", salt: salt, "iterations": 100000, "hash": "SHA-256" },
+                    keyMaterial,
+                    { "name": "AES-GCM", "length": 256 },
+                    true,
+                    ["encrypt", "decrypt"]
+                );
+            },
+
+            async encrypt(text, password) {
+                if (!text || !password) return text;
+                try {
+                    const salt = window.crypto.getRandomValues(new Uint8Array(16));
+                    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+                    const key = await this._deriveKey(password, salt);
+
+                    const encryptedContent = await window.crypto.subtle.encrypt(
+                        { name: "AES-GCM", iv: iv },
+                        key,
+                        this.encoder.encode(text)
+                    );
+
+                    return {
+                        ct: this._arrayBufferToBase64(encryptedContent),
+                        iv: this._arrayBufferToBase64(iv),
+                        salt: this._arrayBufferToBase64(salt)
+                    };
+                } catch (e) {
+                    console.error("Encryption failed", e);
+                    return text;
+                }
+            },
+
+            async decrypt(encryptedData, password) {
+                if (typeof encryptedData !== 'object' || !encryptedData.ct || !password) return encryptedData;
+                try {
+                    const salt = this._base64ToArrayBuffer(encryptedData.salt);
+                    const iv = this._base64ToArrayBuffer(encryptedData.iv);
+                    const key = await this._deriveKey(password, salt);
+
+                    const decryptedContent = await window.crypto.subtle.decrypt(
+                        { name: "AES-GCM", iv: iv },
+                        key,
+                        this._base64ToArrayBuffer(encryptedData.ct)
+                    );
+
+                    return this.decoder.decode(decryptedContent);
+                } catch (e) {
+                    console.error("Decryption failed", e);
+                    return null;
+                }
+            }
+        };
+
+        // Test framework
+        let testResults = [];
+        let db;
+
+        function assert(condition, message) {
+            if (!condition) throw new Error(message);
+        }
+
+        async function runTest(name, fn) {
+            try {
+                await fn();
+                testResults.push({ name, passed: true });
+            } catch (error) {
+                testResults.push({ name, passed: false, error: error.message });
+            }
+        }
+
+        async function clearAllStores() {
+            await DB.clear(DB.STORES.PROMPTS);
+            await DB.clear(DB.STORES.FOLDERS);
+            await DB.clear(DB.STORES.TAGS);
+            await DB.clear(DB.STORES.SETTINGS);
+        }
+
+        async function runAllTests() {
+            const resultsDiv = document.getElementById('results');
+            const summaryDiv = document.getElementById('summary');
+
+            // Open DB
+            try {
+                db = await DB.open();
+                // Clear before tests
+                await clearAllStores();
+            } catch (e) {
+                resultsDiv.innerHTML = `<div class="test fail">Failed to open database: ${e}</div>`;
+                return;
+            }
+
+            // ============ STORE SCHEMA TESTS ============
+            await runTest('All object stores exist with correct keyPaths', async () => {
+                const transaction = db.transaction(db.objectStoreNames, 'readonly');
+                const allStores = Array.from(db.objectStoreNames);
+
+                assert(allStores.includes(DB.STORES.PROMPTS), 'prompts store should exist');
+                assert(allStores.includes(DB.STORES.FOLDERS), 'folders store should exist');
+                assert(allStores.includes(DB.STORES.TAGS), 'globalTags store should exist');
+                assert(allStores.includes(DB.STORES.SETTINGS), 'settings store should exist');
+
+                // Check keyPaths by examining indexes
+                const promptsStore = transaction.objectStore(DB.STORES.PROMPTS);
+                assert(promptsStore.keyPath === 'id', 'prompts keyPath should be "id"');
+
+                const foldersStore = transaction.objectStore(DB.STORES.FOLDERS);
+                assert(foldersStore.keyPath === 'id', 'folders keyPath should be "id"');
+
+                const tagsStore = transaction.objectStore(DB.STORES.TAGS);
+                assert(tagsStore.keyPath === 'id', 'globalTags keyPath should be "id"');
+
+                const settingsStore = transaction.objectStore(DB.STORES.SETTINGS);
+                assert(settingsStore.keyPath === 'key', 'settings keyPath should be "key"');
+            });
+
+            // ============ PROMPT CRUD TESTS ============
+            await runTest('Can create prompt with required fields', async () => {
+                const prompt = {
+                    id: Date.now(),
+                    title: 'Test Prompt',
+                    body: 'This is the body',
+                    notes: 'Some notes',
+                    folderId: null,
+                    tags: ['test', 'demo'],
+                    isFavorite: false,
+                    isLocked: false,
+                    passwordCheck: null,
+                    dateCreated: Date.now(),
+                    dateModified: Date.now()
+                };
+                await DB.put(DB.STORES.PROMPTS, prompt);
+
+                const retrieved = await DB.get(DB.STORES.PROMPTS, prompt.id);
+                assert(retrieved !== undefined, 'Prompt should exist');
+                assert(retrieved.title === prompt.title, 'Title should match');
+                assert(retrieved.body === prompt.body, 'Body should match');
+            });
+
+            await runTest('Can query all prompts', async () => {
+                const all = await DB.getAll(DB.STORES.PROMPTS);
+                assert(Array.isArray(all), 'Should return array');
+                assert(all.length >= 1, 'Should have at least one prompt');
+            });
+
+            await runTest('Can update prompt', async () => {
+                const prompts = await DB.getAll(DB.STORES.PROMPTS);
+                const prompt = prompts[0];
+                prompt.title = 'Updated Title';
+                prompt.dateModified = Date.now();
+                await DB.put(DB.STORES.PROMPTS, prompt);
+
+                const retrieved = await DB.get(DB.STORES.PROMPTS, prompt.id);
+                assert(retrieved.title === 'Updated Title', 'Title should be updated');
+            });
+
+            await runTest('Can delete prompt', async () => {
+                const prompt = {
+                    id: Date.now() + 1,
+                    title: 'To Delete',
+                    body: 'Will be deleted',
+                    notes: '',
+                    folderId: null,
+                    tags: [],
+                    isFavorite: false,
+                    isLocked: false,
+                    passwordCheck: null,
+                    dateCreated: Date.now(),
+                    dateModified: Date.now()
+                };
+                await DB.put(DB.STORES.PROMPTS, prompt);
+                const deleteId = prompt.id;
+                await DB.remove(DB.STORES.PROMPTS, deleteId);
+
+                const retrieved = await DB.get(DB.STORES.PROMPTS, deleteId);
+                assert(retrieved === undefined, 'Deleted prompt should not exist');
+            });
+
+            // ============ FOLDER TESTS ============
+            await runTest('Can create folder', async () => {
+                const folder = {
+                    id: Date.now(),
+                    name: 'My Folder',
+                    isLocked: false,
+                    passwordCheck: null
+                };
+                await DB.put(DB.STORES.FOLDERS, folder);
+
+                const retrieved = await DB.get(DB.STORES.FOLDERS, folder.id);
+                assert(retrieved !== undefined, 'Folder should exist');
+                assert(retrieved.name === 'My Folder', 'Name should match');
+            });
+
+            await runTest('Folders and prompts have correct relationship', async () => {
+                const folderId = Date.now();
+                await DB.put(DB.STORES.FOLDERS, {
+                    id: folderId,
+                    name: 'Related Folder',
+                    isLocked: false,
+                    passwordCheck: null
+                });
+
+                const promptId = Date.now();
+                await DB.put(DB.STORES.PROMPTS, {
+                    id: promptId,
+                    title: 'Prompt in Folder',
+                    body: 'Body',
+                    notes: '',
+                    folderId: folderId,
+                    tags: [],
+                    isFavorite: false,
+                    isLocked: false,
+                    passwordCheck: null,
+                    dateCreated: Date.now(),
+                    dateModified: Date.now()
+                });
+
+                const prompt = await DB.get(DB.STORES.PROMPTS, promptId);
+                assert(prompt.folderId === folderId, 'Prompt should reference folder');
+
+                const folder = await DB.get(DB.STORES.FOLDERS, folderId);
+                assert(folder !== undefined, 'Folder should exist');
+            });
+
+            // ============ TAG TESTS ============
+            await runTest('Can create global tag', async () => {
+                await DB.put(DB.STORES.TAGS, { id: 'important' });
+                const tags = await DB.getAll(DB.STORES.TAGS);
+                const found = tags.find(t => t.id === 'important');
+                assert(found !== undefined, 'Tag should exist');
+            });
+
+            // ============ SETTINGS TESTS ============
+            await runTest('Can store and retrieve settings', async () => {
+                await DB.put(DB.STORES.SETTINGS, { key: 'panelWidth', value: '350px' });
+                const settings = await DB.getAll(DB.STORES.SETTINGS);
+                const widthSetting = settings.find(s => s.key === 'panelWidth');
+                assert(widthSetting !== undefined, 'Setting should exist');
+                assert(widthSetting.value === '350px', 'Value should match');
+            });
+
+            // ============ BULK OPERATIONS TESTS ============
+            await runTest('Can bulk put multiple prompts', async () => {
+                const prompts = [];
+                for (let i = 0; i < 5; i++) {
+                    prompts.push({
+                        id: Date.now() + i,
+                        title: `Bulk Prompt ${i}`,
+                        body: `Body ${i}`,
+                        notes: '',
+                        folderId: null,
+                        tags: [`bulk-${i}`],
+                        isFavorite: false,
+                        isLocked: false,
+                        passwordCheck: null,
+                        dateCreated: Date.now(),
+                        dateModified: Date.now()
+                    });
+                }
+                await DB.bulkPut(DB.STORES.PROMPTS, prompts);
+                const all = await DB.getAll(DB.STORES.PROMPTS);
+                const count = all.filter(p => p.title.startsWith('Bulk Prompt')).length;
+                assert(count === 5, 'Should have 5 bulk prompts');
+            });
+
+            await runTest('Can bulk delete prompts', async () => {
+                const all = await DB.getAll(DB.STORES.PROMPTS);
+                const bulkIds = all.filter(p => p.title.startsWith('Bulk Prompt')).map(p => p.id);
+                await DB.bulkRemove(DB.STORES.PROMPTS, bulkIds);
+
+                const after = await DB.getAll(DB.STORES.PROMPTS);
+                const remaining = after.filter(p => p.title.startsWith('Bulk Prompt')).length;
+                assert(remaining === 0, 'All bulk prompts should be deleted');
+            });
+
+            // ============ ENCRYPTION TESTS ============
+            await runTest('Encryption produces different ciphertexts for same text', async () => {
+                const text = 'Sensitive content';
+                const password = 'test123';
+                const encrypted1 = await CryptoService.encrypt(text, password);
+                const encrypted2 = await CryptoService.encrypt(text, password);
+
+                // Should have different salts and IVs
+                assert(encrypted1.ct !== encrypted2.ct, 'Ciphertexts should differ (random salt+IV)');
+                assert(encrypted1.salt !== encrypted2.salt, 'Salts should differ');
+                assert(encrypted1.iv !== encrypted2.iv, 'IVs should differ');
+            });
+
+            await runTest('Can encrypt and decrypt successfully', async () => {
+                const text = 'Secret message';
+                const password = 'securePass!';
+                const encrypted = await CryptoService.encrypt(text, password);
+                assert(encrypted.ct && encrypted.iv && encrypted.salt, 'Encrypted object should have all fields');
+
+                const decrypted = await CryptoService.decrypt(encrypted, password);
+                assert(decrypted === text, 'Decrypted text should match original');
+            });
+
+            await runTest('Decryption fails with wrong password', async () => {
+                const text = 'Secret';
+                const password = 'correct';
+                const wrongPassword = 'wrong';
+                const encrypted = await CryptoService.encrypt(text, password);
+
+                const decrypted = await CryptoService.decrypt(encrypted, wrongPassword);
+                assert(decrypted === null, 'Decryption should return null with wrong password');
+            });
+
+            await runTest('Encryption handles empty string', async () => {
+                const text = '';
+                const password = 'pass';
+                const encrypted = await CryptoService.encrypt(text, password);
+                const decrypted = await CryptoService.decrypt(encrypted, password);
+                assert(decrypted === '', 'Should handle empty string');
+            });
+
+            await runTest('Encryption returns input if conditions not met', async () => {
+                const result = await CryptoService.encrypt(null, 'pass');
+                assert(result === null, 'Should return null if no text');
+
+                const result2 = await CryptoService.encrypt('text', null);
+                assert(result2 === 'text', 'Should return original text if no password');
+            });
+
+            await runTest('PBKDF2 uses 100,000 iterations', async () => {
+                // Spy on deriveKey to capture iterations
+                let capturedIterations = null;
+                const originalDeriveKey = crypto.subtle.deriveKey.bind(crypto.subtle);
+                crypto.subtle.deriveKey = async function(...args) {
+                    const [{ iterations }] = args;
+                    capturedIterations = iterations;
+                    return originalDeriveKey.apply(this, args);
+                };
+
+                await CryptoService.encrypt('test', 'password');
+
+                assert(capturedIterations === 100000, `Expected 100000 iterations, got ${capturedIterations}`);
+
+                // Restore original
+                crypto.subtle.deriveKey = originalDeriveKey;
+            });
+
+            await runTest('No plaintext passwords stored in DB (passwordCheck validation)', async () => {
+                // Create a locked prompt with password
+                const password = 'testPass123';
+                const promptId = Date.now();
+                const encryptedBody = await CryptoService.encrypt('Body', password);
+                const encryptedNotes = await CryptoService.encrypt('Notes', password);
+                const passwordCheck = await CryptoService.encrypt(String(promptId), password);
+
+                const lockedPrompt = {
+                    id: promptId,
+                    title: 'Locked Test',
+                    body: encryptedBody,
+                    notes: encryptedNotes,
+                    folderId: null,
+                    tags: [],
+                    isFavorite: false,
+                    isLocked: true,
+                    passwordCheck: passwordCheck,
+                    dateCreated: Date.now(),
+                    dateModified: Date.now()
+                };
+
+                await DB.put(DB.STORES.PROMPTS, lockedPrompt);
+
+                const retrieved = await DB.get(DB.STORES.PROMPTS, promptId);
+                // Verify that the prompt does not contain a plaintext 'password' field
+                assert('password' in retrieved === false, 'Should not have plaintext "password" field');
+                // Verify that body and notes are encrypted objects
+                assert(typeof retrieved.body === 'object' && retrieved.body.ct, 'Body should be encrypted');
+                assert(typeof retrieved.notes === 'object' && retrieved.notes.ct, 'Notes should be encrypted');
+                // Verify that only encrypted check is passwordCheck
+                assert(retrieved.passwordCheck !== null, 'passwordCheck should exist');
+                assert(typeof retrieved.passwordCheck === 'string' || (typeof retrieved.passwordCheck === 'object' && retrieved.passwordCheck.ct), 'passwordCheck should be encrypted string or object');
+            });
+
+            // ============ LOCKED PROMPT INTEGRATION ============
+            await runTest('Locked prompt stores encrypted body and notes', async () => {
+                const password = 'promptLock123';
+                const promptId = Date.now();
+                const plaintextBody = 'Encrypted body content';
+                const plaintextNotes = 'Encrypted notes';
+
+                const encryptedBody = await CryptoService.encrypt(plaintextBody, password);
+                const encryptedNotes = await CryptoService.encrypt(plaintextNotes, password);
+                const passwordCheck = await CryptoService.encrypt(String(promptId), password);
+
+                const lockedPrompt = {
+                    id: promptId,
+                    title: 'Locked Prompt',
+                    body: encryptedBody,
+                    notes: encryptedNotes,
+                    folderId: null,
+                    tags: [],
+                    isFavorite: false,
+                    isLocked: true,
+                    passwordCheck: passwordCheck,
+                    dateCreated: Date.now(),
+                    dateModified: Date.now()
+                };
+
+                await DB.put(DB.STORES.PROMPTS, lockedPrompt);
+
+                const retrieved = await DB.get(DB.STORES.PROMPTS, promptId);
+                assert(retrieved.isLocked === true, 'isLocked should be true');
+                assert(typeof retrieved.body === 'object', 'Body should be encrypted object');
+                assert(retrieved.body.ct !== undefined, 'Body should have ciphertext');
+                assert(retrieved.body.iv !== undefined, 'Body should have IV');
+                assert(retrieved.body.salt !== undefined, 'Body should have salt');
+
+                // Verify decryption
+                const decryptedBody = await CryptoService.decrypt(retrieved.body, password);
+                const decryptedNotes = await CryptoService.decrypt(retrieved.notes, password);
+                assert(decryptedBody === plaintextBody, 'Decrypted body should match');
+                assert(decryptedNotes === plaintextNotes, 'Decrypted notes should match');
+            });
+
+            // ============ STORAGE USAGE ============
+            await runTest('getStorageUsage calculates total size', async () => {
+                const usage = await DB.getStorageUsage();
+                assert(typeof usage === 'number', 'Should return a number');
+                assert(usage > 0, 'Should be greater than 0 for populated DB');
+            });
+
+            // ============ CLEAR ALL ============
+            await runTest('Can clear all stores', async () => {
+                await DB.clear(DB.STORES.PROMPTS);
+                await DB.clear(DB.STORES.FOLDERS);
+                await DB.clear(DB.STORES.TAGS);
+                await DB.clear(DB.STORES.SETTINGS);
+
+                const prompts = await DB.getAll(DB.STORES.PROMPTS);
+                const folders = await DB.getAll(DB.STORES.FOLDERS);
+                const tags = await DB.getAll(DB.STORES.TAGS);
+                const settings = await DB.getAll(DB.STORES.SETTINGS);
+
+                assert(prompts.length === 0, 'Prompts should be empty');
+                assert(folders.length === 0, 'Folders should be empty');
+                assert(tags.length === 0, 'Tags should be empty');
+                assert(settings.length === 0, 'Settings should be empty');
+            });
+
+            // ============ DISPLAY RESULTS ============
+            const suites = {
+                'Schema and Store Setup': testResults.slice(0, 1),
+                'Prompt CRUD': testResults.slice(1, 5),
+                'Folder Operations': testResults.slice(5, 7),
+                'Tag Operations': testResults.slice(7, 8),
+                'Settings Operations': testResults.slice(8, 9),
+                'Bulk Operations': testResults.slice(9, 11),
+                'Encryption': testResults.slice(11, 16),
+                'Locked Prompts': testResults.slice(16, 17),
+                'Storage Usage & Cleanup': testResults.slice(17)
+            };
+
+            for (const [suiteName, tests] of Object.entries(suites)) {
+                const suiteDiv = document.createElement('div');
+                suiteDiv.className = 'test-suite';
+                suiteDiv.innerHTML = `<h2>${suiteName}</h2>`;
+
+                tests.forEach(test => {
+                    const testDiv = document.createElement('div');
+                    testDiv.className = `test ${test.passed ? 'pass' : 'fail'}`;
+                    testDiv.innerHTML = `
+                        <span class="test-name">${test.name}</span>
+                        <span class="test-status">${test.passed ? '✓ PASS' : '✗ FAIL'}</span>
+                    `;
+                    if (test.error) {
+                        testDiv.innerHTML += `<div class="error-details">${test.error}</div>`;
+                    }
+                    suiteDiv.appendChild(testDiv);
+                });
+
+                resultsDiv.appendChild(suiteDiv);
+            }
+
+            const passed = testResults.filter(t => t.passed).length;
+            const total = testResults.length;
+            const allPass = passed === total;
+
+            summaryDiv.className = `summary ${allPass ? 'all-pass' : 'has-fail'}`;
+            summaryDiv.textContent = `${passed}/${total} tests passed${allPass ? ' 🎉' : ''}`;
+
+            // Cleanup: close DB after tests
+            db.close();
+        }
+
+        // Run tests on load
+        runAllTests().catch(err => {
+            document.getElementById('results').innerHTML = `<div class="test fail">Test runner crashed: ${err}</div>`;
+        });
+    </script>
+</body>
+</html>

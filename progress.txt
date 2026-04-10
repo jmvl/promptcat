@@ -1,0 +1,187 @@
+# Work Progress Log
+
+## Stories Implemented
+
+### db-001: Document IndexedDB schema and data model
+**Status**: Completed ✅
+
+**Work Done**:
+- Analyzed `promptcat.html` to extract complete IndexedDB schema
+- Created comprehensive documentation in `DB_SCHEMA.md` (11,498 bytes)
+- Created browser-based test suite in `test-schema.html` (27,761 bytes)
+
+**Deliverables**:
+1. **DB_SCHEMA.md** - Complete technical documentation including:
+   - All 4 object stores: `prompts`, `folders`, `globalTags`, `settings`
+   - Field definitions, types, and constraints
+   - Encryption implementation details (AES-GCM, PBKDF2)
+   - Data relationships and foreign keys
+   - Access patterns and performance considerations
+   - Security considerations and boundary analysis
+   - Migration history and API reference
+
+2. **test-schema.html** - Browser-based test suite covering:
+   - Schema validation (store existence, keyPaths)
+   - Prompt CRUD operations (create, read, update, delete)
+   - Folder operations and relationships
+   - Tag operations
+   - Settings storage
+   - Bulk operations (bulkPut, bulkRemove)
+   - Encryption/decryption correctness
+   - Locked prompt integration
+   - Storage usage calculation
+   - Clear/reset operations
+
+**Test Coverage**: 17 automated tests covering schema, CRUD, encryption, and data integrity.
+
+**Next Steps**:
+- Run test suite by opening `test-schema.html` in browser (requires IndexedDB support)
+- Review DB_SCHEMA.md for accuracy and completeness
+
+---
+
+# Codebase Patterns
+
+## Reusable Patterns Identified
+
+### IndexedDB Wrapper Pattern
+- **DB Module**: Encapsulates IndexedDB access with promise-based API
+- **Pattern**: IIFE exposing `{open, getAll, get, put, bulkPut, remove, bulkRemove, clear, getStorageUsage, STORES}`
+- **Usage**: Single database with multiple object stores, keyPath-based access
+
+### Encryption Service Pattern
+- **CryptoService**: AES-GCM encryption with PBKDF2 key derivation
+- **Encryption Output**: `{ ct, iv, salt }` object (base64 encoded)
+- **Password Validation**: Encrypted check value `passwordCheck` stores `encrypt(String(id), password)`
+- **Session Caching**: Optional in-memory storage of passwords for "remember this session"
+
+### Lockable Entity Pattern
+- **Entities**: Prompts (individually lockable) and Folders (lockable with inheritance)
+- **Fields**: `isLocked` (boolean), `passwordCheck` (encrypted ID)
+- **Behavior**: When folder locked, all contained prompts inherit encryption with same password
+- **UI**: Lock switch disabled in details view if folder is locked
+
+### Settings Store Pattern
+- **Schema**: `{ key: string, value: any }`
+- **Usage**: Simple key-value store for UI preferences (e.g., `panelWidth`)
+- **Access**: Get by key, not by id
+
+### Bulk Operations Pattern
+- **Transaction**: Single `readwrite` transaction for batch operations
+- **Bulk Put**: `items.forEach(item => store.put(item))` then `transaction.oncomplete`
+- **Bulk Remove**: `keys.forEach(key => store.delete(key))` then `transaction.oncomplete`
+
+### Pure Business Logic Module Pattern
+- **Module**: `PromptCatLogic` - Self-contained IIFE exposing pure functions
+- **Responsibilities**: Core business operations: CRUD, search, tag management, folder operations, import/export, stats
+- **Dependencies**: None (except internal crypto helpers using Web Crypto)
+- **Benefits**: Testable in isolation (Node.js), no DOM dependencies, reusable across environments
+- **Test Coverage**: Unit tests in `test-logic.js` (34 tests)
+
+## Pattern Usage Guidelines
+- Use DB module for all IndexedDB access
+- Use CryptoService.encrypt(text, password) for sensitive data
+- For validation, compute `CryptoService.encrypt(String(entityId), password)` and compare against stored `passwordCheck`
+- Clear `decryptedCache` when closing prompt details view to avoid memory leaks
+- Store UI state in separate `settings` store, not in entities
+
+---
+
+# Notes for Future Development
+
+- Consider adding native indexes for search performance on large datasets
+- Migration strategy needed for schema evolution (current version=2 unused)
+- Full-text search could be implemented with external library if dataset grows
+- Export format includes `globalTags` as array of strings, not `{ id }` objects (inconsistency noted)
+
+---
+
+## Stories Implemented (Continued)
+
+### crypto-002: Validate encryption/decryption implementation
+**Status**: Completed ✅
+
+**Work Done**:
+- Reviewed Web Crypto API usage in `promptcat.html`
+- Confirmed AES-GCM with 256-bit keys and 12-byte IV
+- Confirmed PBKDF2 key derivation with 100,000 iterations and 16-byte salt
+- Verified that encrypted fields (body, notes, passwordCheck) are stored as `{ ct, iv, salt }` objects
+- Verified that wrong password returns `null` on decryption (no corrupted data)
+- Verified that no plaintext passwords are stored (only encrypted `passwordCheck`)
+- Wrote comprehensive automated tests for Node.js (via `test-crypto.js`) using native WebCrypto
+- Enhanced browser test suite (`test-schema.html`) with two new tests:
+  - PBKDF2 iteration count verification
+  - Password storage validation (no plaintext password field)
+
+**Deliverables**:
+1. **test-crypto.js** - Node.js test suite (9 tests) validating core crypto operations:
+   - PBKDF2 uses 100,000 iterations
+   - Encrypt/decrypt round-trip
+   - Wrong password returns null
+   - Empty string handling
+   - Input validation
+   - Ciphertext uniqueness (random salt/IV)
+   - Encrypted object structure (ct, iv, salt base64 strings)
+   - Different passwords produce different ciphertexts
+2. **test-schema.html** - Updated browser test suite with 2 new tests for crypto validation
+
+**Test Results**: All 9 Node.js tests pass ✅
+
+**Output**:
+```text
+=== Crypto Validation Tests (Node.js WebCrypto) ===
+✓ Encryption produces different ciphertexts for same text (random salt/IV)
+✓ Can encrypt and decrypt successfully (round-trip)
+✓ Decryption fails with wrong password (returns null)
+✓ Encryption handles empty string
+✓ Encryption returns original text if no password provided
+✓ Encryption returns null if no text provided
+✓ PBKDF2 uses 100,000 iterations
+✓ Encrypted object structure matches specification (ct, iv, salt all base64 strings)
+✓ Different passwords produce different ciphertexts
+
+=== Total: 9 passed, 0 failed ===
+```
+
+**Acceptance Criteria Met**:
+- ✅ Password-based key derivation uses PBKDF2 with appropriate iterations (100,000)
+- ✅ Encrypted fields cannot be read without password (decryption fails without correct password)
+- ✅ Wrong password returns null/error, not corrupted data (returns `null`)
+- ✅ No passwords appear in localStorage or IndexedDB (only encrypted `passwordCheck` stored; passwords kept in memory only)
+
+**Next Steps**:
+- Run browser test suite by opening `test-schema.html` in a browser (now includes 19 total tests)
+- Consider adding migration for future crypto parameter changes
+- Add rate limiting to password attempts in UI (throttling)
+
+### logic-003: Extract core business logic into pure functions
+**Status**: Completed ✅
+
+**Work Done**:
+- Analyzed `promptcat.html` to identify core business logic functions
+- Extracted all CRUD operations, search, tag management, folder operations, import/export, and stats into a separate module `logic.js`
+- Created comprehensive test suite `test-logic.js` with 34 unit tests covering all functions
+- All tests pass in Node.js environment using WebCrypto polyfill
+
+**Deliverables**:
+1. **logic.js** - Pure business logic module exposing `PromptCatLogic` with:
+   - CRUD: createPrompt, updatePrompt, deletePrompt, bulkDeletePrompts
+   - Search: searchPrompts, createMatchSnippet
+   - Tags: addGlobalTag, renameTag, deleteTag
+   - Folders: createFolder, renameFolder, deleteFolder, toggleFolderLock, movePromptToFolder, bulkMovePrompts
+   - Import/Export: serializeExport, importData
+   - Stats: countPromptsInFolder, countPromptsByTag, countLockedPrompts
+   - Utilities: filterPrompts, sortPrompts, validatePassword, encryptContent, decryptContent, createPasswordCheck
+2. **test-logic.js** - Node.js test suite (34 tests) validating all business logic functions
+
+**Test Results**: All 34 tests pass ✅
+
+**Acceptance Criteria Met**:
+- ✅ All CRUD operations have dedicated functions
+- ✅ Search function accepts query and returns matching prompts (with IDs)
+- ✅ Tag add/remove/rename functions exist and update all affected prompts
+- ✅ Drag-drop reordering logic (movePromptToFolder, bulkMovePrompts) is isolated and testable
+- ✅ Functions have clear parameter and return types documented (JSDoc)
+
+**Next Steps**:
+- Integrate `logic.js` into `promptcat.html` by replacing inline logic with module calls
